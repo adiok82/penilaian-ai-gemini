@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penilaian Kode Otomatis dengan Gemini</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            border: 1px solid #e5e7eb;
+        }
+        textarea {
+            min-height: 150px;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">Penilaian Kode Otomatis</h1>
+            <p class="text-slate-600 mt-2">Memanfaatkan Google Gemini untuk Memberikan Umpan Balik Pemrograman</p>
+        </header>
+
+        <main>
+            <!-- Input Card -->
+            <div class="card p-6 mb-8">
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Input Data Penilaian</h2>
+                
+                <!-- API Key Input -->
+                <div class="mb-4">
+                    <label for="apiKey" class="block text-sm font-medium text-slate-700 mb-1">Google Gemini API Key 🔑</label>
+                    <input type="password" id="apiKey" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="Masukkan kunci API Anda di sini">
+                </div>
+
+                <!-- Problem Description Input -->
+                <div class="mb-4">
+                    <label for="problemDescription" class="block text-sm font-medium text-slate-700 mb-1">Deskripsi Soal Pemrograman</label>
+                    <textarea id="problemDescription" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="Tempel deskripsi soal di sini..."></textarea>
+                </div>
+
+                <!-- Student Code Input -->
+                <div>
+                    <label for="studentCode" class="block text-sm font-medium text-slate-700 mb-1">Kode Jawaban Siswa (C++)</label>
+                    <textarea id="studentCode" class="w-full p-2 border border-slate-300 rounded-md font-mono text-sm bg-slate-50 focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="#include <iostream> ..."></textarea>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="mt-6 text-center">
+                    <button id="assessButton" class="bg-sky-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 transition-colors duration-300">
+                        Nilai Kode
+                    </button>
+                </div>
+            </div>
+
+            <!-- Output Card -->
+            <div id="resultCard" class="card p-6 hidden">
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-3">Hasil Penilaian</h2>
+                
+                <!-- Loading Spinner -->
+                <div id="loading" class="text-center py-8 hidden">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
+                    <p class="mt-4 text-slate-600">Sedang menganalisis kode...</p>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error" class="text-red-600 bg-red-100 p-4 rounded-md hidden"></div>
+                
+                <!-- Result Display -->
+                <div id="result" class="space-y-4"></div>
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        // Get references to DOM elements
+        const apiKeyInput = document.getElementById('apiKey');
+        const problemInput = document.getElementById('problemDescription');
+        const codeInput = document.getElementById('studentCode');
+        const assessButton = document.getElementById('assessButton');
+        const resultCard = document.getElementById('resultCard');
+        const loadingDiv = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const resultDiv = document.getElementById('result');
+
+        // Pre-fill text areas with example data for convenience
+        problemInput.value = `Buatlah sebuah program C++ yang meminta pengguna memasukkan sebuah bilangan bulat positif.
+Program kemudian harus menghitung dan menampilkan jumlah dari semua bilangan genap
+dari 1 hingga bilangan yang dimasukkan tersebut.
+
+Contoh Input:
+10
+
+Contoh Output:
+Jumlah bilangan genap hingga 10 adalah: 30
+(Karena 2 + 4 + 6 + 8 + 10 = 30)`;
+        
+        codeInput.value = `#include <iostream>
+
+int main() {
+    int n;
+    std::cout << "Masukkan sebuah bilangan bulat positif: ";
+    std::cin >> n;
+    int sum = 0;
+    for (int i = 1; i <= n; i++) {
+        if (i % 2 == 0) {
+            sum += i;
+        }
+    }
+    std::cout << "Jumlah bilangan genap hingga " << n << " adalah: " << sum << std::endl;
+    return 0;
+}`;
+
+        // Add click event listener to the button
+        assessButton.addEventListener('click', async () => {
+            // Reset UI
+            resultCard.classList.remove('hidden');
+            loadingDiv.classList.remove('hidden');
+            errorDiv.classList.add('hidden');
+            resultDiv.innerHTML = '';
+
+            const apiKey = apiKeyInput.value;
+            const problemDescription = problemInput.value;
+            const studentCode = codeInput.value;
+
+            // Validate inputs
+            if (!apiKey || !problemDescription || !studentCode) {
+                showError("Harap isi semua kolom: Kunci API, Deskripsi Soal, dan Kode Siswa.");
+                return;
+            }
+
+            const prompt = buildPrompt(problemDescription, studentCode);
+            await getGeminiAssessment(apiKey, prompt);
+        });
+
+        // Function to build the prompt
+        function buildPrompt(problem, code) {
+            return `
+            Anda adalah seorang asisten pengajar ahli untuk mata pelajaran pemrograman C++ di tingkat SMA. Tugas Anda adalah menilai kode siswa secara objektif dan memberikan umpan balik yang konstruktif.
+
+            Berdasarkan soal dan rubrik penilaian yang saya berikan, evaluasilah kode C++ yang ditulis oleh siswa berikut ini.
+
+            [SOAL_PEMROGRAMAN]:
+            ${problem}
+
+            [KODE_SISWA]:
+            \`\`\`cpp
+            ${code}
+            \`\`\`
+
+            [RUBRIK_PENILAIAN]:
+            1. Kebenaran Fungsional (Bobot: 40%): Apakah kode menghasilkan output yang benar dan sesuai dengan semua permintaan soal?
+            2. Efisiensi dan Optimalisasi (Bobot: 20%): Apakah algoritma yang digunakan efisien? Apakah ada penggunaan memori atau perulangan yang tidak perlu?
+            3. Keterbacaan dan Gaya Kode (Bobot: 20%): Apakah kode mudah dibaca? Apakah penamaan variabel dan fungsi sudah deskriptif dan konsisten?
+            4. Praktik Pemrograman yang Baik (Bobot: 20%): Apakah siswa menggunakan struktur data yang tepat? Apakah ada penanganan error dasar? Apakah ada komentar jika diperlukan?
+
+            [FORMAT_OUTPUT]:
+            Berikan jawaban Anda HANYA dalam format JSON yang valid tanpa teks tambahan. Strukturnya harus sebagai berikut:
+            {
+              "skor_akhir": "<nilai numerik antara 0-100>",
+              "evaluasi_per_kriteria": {
+                "kebenaran_fungsional": { "skor": "<nilai 0-100>", "catatan": "<penjelasan singkat>" },
+                "efisiensi": { "skor": "<nilai 0-100>", "catatan": "<penjelasan singkat>" },
+                "keterbacaan": { "skor": "<nilai 0-100>", "catatan": "<penjelasan singkat>" },
+                "praktik_baik": { "skor": "<nilai 0-100>", "catatan": "<penjelasan singkat>" }
+              },
+              "umpan_balik_kualitatif": {
+                "poin_positif": "<jelaskan apa yang sudah baik dari kode siswa>",
+                "area_perbaikan": "<jelaskan aspek utama yang perlu diperbaiki>",
+                "saran_konkret": "<berikan 1-2 saran langkah perbaikan yang bisa dilakukan siswa>"
+              }
+            }`;
+        }
+
+        // Function to call the Gemini API
+        async function getGeminiAssessment(apiKey, prompt) {
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+            const headers = { "Content-Type": "application/json" };
+            const data = {
+                contents: [{ parts: [{ text: prompt }] }],
+                // Enforce JSON output from the model
+                generationConfig: {
+                    responseMimeType: "application/json",
+                }
+            };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API Error: ${response.status} - ${errorData.error.message}`);
+                }
+
+                const apiResponse = await response.json();
+                const textContent = apiResponse.candidates[0].content.parts[0].text;
+                const resultJson = JSON.parse(textContent);
+                displayResult(resultJson);
+
+            } catch (e) {
+                showError(`Terjadi kesalahan: ${e.message}`);
+            } finally {
+                loadingDiv.classList.add('hidden');
+            }
+        }
+        
+        // Function to display an error message
+        function showError(message) {
+            loadingDiv.classList.add('hidden');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        // Function to display the result in a structured format
+        function displayResult(data) {
+            resultDiv.innerHTML = `
+                <div class="text-center mb-6">
+                    <p class="text-lg text-slate-600">Skor Akhir</p>
+                    <p class="text-6xl font-bold text-sky-600">${data.skor_akhir}</p>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-xl font-semibold mb-2">Evaluasi per Kriteria</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            ${renderCriteria(data.evaluasi_per_kriteria)}
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold mb-2">Umpan Balik Kualitatif</h3>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3">
+                            <div>
+                                <h4 class="font-semibold text-green-700">✅ Poin Positif</h4>
+                                <p class="text-slate-700">${data.umpan_balik_kualitatif.poin_positif}</p>
+                            </div>
+                             <div>
+                                <h4 class="font-semibold text-amber-700">⚠️ Area Perbaikan</h4>
+                                <p class="text-slate-700">${data.umpan_balik_kualitatif.area_perbaikan}</p>
+                            </div>
+                             <div>
+                                <h4 class="font-semibold text-sky-700">💡 Saran Konkret</h4>
+                                <p class="text-slate-700">${data.umpan_balik_kualitatif.saran_konkret}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCriteria(criteria) {
+            let html = '';
+            const criteriaMap = {
+                'kebenaran_fungsional': 'Kebenaran Fungsional',
+                'efisiensi': 'Efisiensi & Optimalisasi',
+                'keterbacaan': 'Keterbacaan & Gaya Kode',
+                'praktik_baik': 'Praktik Pemrograman Baik'
+            };
+            for (const key in criteria) {
+                html += `
+                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <div class="flex justify-between items-center mb-1">
+                            <h4 class="font-semibold">${criteriaMap[key] || key}</h4>
+                            <span class="font-bold text-lg text-sky-600">${criteria[key].skor}</span>
+                        </div>
+                        <p class="text-sm text-slate-600">${criteria[key].catatan}</p>
+                    </div>
+                `;
+            }
+            return html;
+        }
+
+    </script>
+</body>
+</html>
